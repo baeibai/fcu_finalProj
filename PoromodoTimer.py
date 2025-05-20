@@ -5,19 +5,36 @@ import threading
 import csv
 from datetime import datetime, date
 
+class TimeSettingDialog(simpledialog.Dialog):
+    def body(self, master):
+        tk.Label(master, text="學習時間 (分鐘):").grid(row=0)
+        tk.Label(master, text="休息時間 (分鐘):").grid(row=1)
+
+        self.study_entry = tk.Entry(master)
+        self.relax_entry = tk.Entry(master)
+
+        self.study_entry.grid(row=0, column=1)
+        self.relax_entry.grid(row=1, column=1)
+        return self.study_entry  # 初始 focus
+
+    def apply(self):
+        self.study_time = self.study_entry.get()
+        self.relax_time = self.relax_entry.get()
+
 class PomodoroTimer:
     def __init__(self, root):
         self.root = root
-        self.root.title("番茄鐘")
-        self.root.geometry("300x250")
+        self.root.title("Poromodo Timer")
+        self.root.geometry("300x300")
 
         self.is_running = False
         self.is_break = False
-        self.total_seconds = 25 * 60
+        self.study_seconds = 25 * 1
+        self.relax_seconds = 5 * 1
         self.study_time_today = 0  # 單位為秒
 
         # 顯示時間的Label
-        self.time_label = tk.Label(root, text=self.format_time(self.total_seconds), font=("Helvetica", 30))
+        self.time_label = tk.Label(root, text=self.format_time(self.study_seconds), font=("Helvetica", 30))
         self.time_label.pack(expand=True)
 
         # 累積時間Label
@@ -31,14 +48,28 @@ class PomodoroTimer:
         self.start_button = tk.Button(button_frame, text="開始", command=self.toggle_timer)
         self.start_button.grid(row=0, column=0, padx=10)
 
-        self.exit_button = tk.Button(button_frame, text="離開", command=self.root.quit)
-        self.exit_button.grid(row=0, column=1, padx=10)
+        self.setTime_button = tk.Button(button_frame, text="自訂時間", command=self.set_time)
+        self.setTime_button.grid(row=0, column=1, padx=10)
 
         # 背景執行的 Timer
         self.timer_thread = None
 
     def format_time(self, seconds):
         return f"{seconds // 60:02}:{seconds % 60:02}"
+    
+    def set_time(self):
+        dialog = TimeSettingDialog(self.root, title="自訂時間")
+        try:
+            study_time = int(dialog.study_time)
+            relax_time = int(dialog.relax_time)
+            if study_time > 0 and relax_time > 0:
+                self.total_seconds = study_time * 60
+                self.relax_seconds = relax_time * 60
+                self.update_ui()
+            else:
+                messagebox.showerror("錯誤", "請輸入有效的正整數！")
+        except Exception:
+            messagebox.showerror("錯誤", "請輸入有效的數字！")
 
     def toggle_timer(self):
         if self.is_running:
@@ -66,7 +97,7 @@ class PomodoroTimer:
     def handle_end_period(self):
         if not self.is_break:
             # 累加學習時間
-            self.study_time_today += 25 * 60
+            self.study_time_today += self.study_seconds
             self.update_study_time_label()
             self.prompt_and_save_study_record()
 
@@ -98,8 +129,8 @@ class PomodoroTimer:
         now = datetime.now().strftime("%H:%M:%S")
 
         with open(filename, "a", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow([today, now, plan, "25分鐘"])
+            writer = csv.writer(file, encoding="utf-8")
+            writer.writerow([today, now, plan, f"{self.study_seconds}分鐘"])
 
 # 啟動主視窗
 if __name__ == "__main__":
