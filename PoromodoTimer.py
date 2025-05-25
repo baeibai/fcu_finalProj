@@ -5,6 +5,7 @@ import threading
 import csv
 from datetime import datetime, date
 from tkinter import ttk
+from PIL import Image, ImageTk
 
 class TimeSettingDialog(simpledialog.Dialog):
     def body(self, master):
@@ -25,8 +26,17 @@ class TimeSettingDialog(simpledialog.Dialog):
 class PomodoroTimer:
     def __init__(self, root):
         self.root = root
-        self.root.title("Poromodo Timer")
+        self.root.title("Pomodoro Timer")
         self.root.geometry("300x300")
+        self.root.iconbitmap("pic/tomato_icon.ico")
+
+        # 設定背景圖片
+        self.bg_image_all = ImageTk.PhotoImage(Image.open("pic/tomato_all.png").resize((300, 300)))
+        self.bg_image_half = ImageTk.PhotoImage(Image.open("pic/tomato_half.png").resize((300, 300)))
+        self.bg_image_little = ImageTk.PhotoImage(Image.open("pic/tomato_little.png").resize((300, 300)))
+        self.bg_image_relax = ImageTk.PhotoImage(Image.open("pic/relax.png").resize((300, 300)))
+        self.bg_label = tk.Label(self.root, image=self.bg_image_all)
+        self.bg_label.place(relwidth=1, relheight=1)
 
         # 新增上方選單
         menubar = tk.Menu(self.root)
@@ -34,7 +44,7 @@ class PomodoroTimer:
         mode_menu.add_command(label="計時", command=self.show_timer)
         mode_menu.add_command(label="查看紀錄", command=self.show_records)
         menubar.add_cascade(label="功能", menu=mode_menu)
-        self.root.config(menu=menubar)
+    
 
         self.is_running = False
         self.is_break = False
@@ -89,6 +99,9 @@ class PomodoroTimer:
         return f"{seconds // 60:02}:{seconds % 60:02}"
     
     def set_time(self):
+        # 若正在計時，直接返回，不允許設定
+        if self.is_running:
+            return
         dialog = TimeSettingDialog(self.root, title="自訂時間")
         try:
             study_time = int(dialog.study_time)
@@ -108,16 +121,18 @@ class PomodoroTimer:
         if self.is_running:
             self.is_running = False
             self.start_button.config(text="開始")
+            self.setTime_button.config(state="normal")
         else:
             self.is_running = True
             self.start_button.config(text="暫停")
+            self.setTime_button.config(state="disabled")
             if not self.timer_thread or not self.timer_thread.is_alive():
                 self.timer_thread = threading.Thread(target=self.run_timer)
                 self.timer_thread.start()
 
     def run_timer(self):
         while self.current_seconds > 0 and self.is_running:
-            time.sleep(1)
+            time.sleep(0.1)
             self.current_seconds -= 1
             self.update_ui(self.current_seconds)
         if self.current_seconds == 0:
@@ -125,6 +140,18 @@ class PomodoroTimer:
             self.handle_end_period()
 
     def update_ui(self, current_seconds):
+        # 更改背景圖片
+        if self.is_break:
+            self.bg_label.config(image=self.bg_image_relax)
+        else:
+            if current_seconds == 0:
+                self.time_label.config(text=self.format_time(current_seconds))
+                return
+            elif (current_seconds / self.study_seconds) <= 0.6:
+                if (current_seconds / self.study_seconds) <= 0.3:
+                    self.bg_label.config(image=self.bg_image_little)
+                self.bg_label.config(image=self.bg_image_half)
+        # 更改秒數
         self.time_label.config(text=self.format_time(current_seconds))
 
     def handle_end_period(self):
@@ -132,16 +159,15 @@ class PomodoroTimer:
             self.study_time_today += self.study_seconds
             self.update_study_time_label()
             # 用 after 在主執行緒呼叫 GUI 對話框
-            self.root.after(0, self.prompt_and_save_study_record)
-            self.is_break = True
-            self.current_seconds = self.relax_seconds  # 休息時倒數休息時間
             self.start_button.config(text="開始")
-            messagebox.showinfo(f"休息時間", f"恭喜你完成一輪，來休{self.relax_seconds // 60}分鐘吧！")
+            self.setTime_button.config(state="normal")
+            self.root.after(0, self.prompt_and_save_study_record)
         else:
             self.is_break = False
             self.current_seconds = self.study_seconds  # 學習時倒數學習時間
             messagebox.showinfo("重新開始", "休息結束，準備下一輪吧！")
             self.start_button.config(text="開始")
+            self.setTime_button.config(state="normal")
         self.update_ui(self.current_seconds)
         
 
@@ -153,6 +179,14 @@ class PomodoroTimer:
         plan = simpledialog.askstring("學習記錄", "請輸入這次讀書的內容：")
         if plan:
             self.save_to_csv(plan)
+        else:
+            messagebox.showwarning("警告", "未輸入內容，將不保存紀錄。")
+        self.is_break = True
+        self.current_seconds = self.relax_seconds  # 休息時倒數休息時間
+        self.start_button.config(text="開始")
+        self.setTime_button.config(state="normal")
+        messagebox.showinfo(f"休息時間", f"恭喜你完成一輪，來休{self.relax_seconds // 60}分鐘吧！")
+        self.update_ui(self.current_seconds)
 
     def save_to_csv(self, plan):
         filename = "study_log.csv"
