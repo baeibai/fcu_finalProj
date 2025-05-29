@@ -35,8 +35,15 @@ class PomodoroTimer:
         self.bg_image_half = ImageTk.PhotoImage(Image.open("pic/tomato_half.png").resize((300, 300)))
         self.bg_image_little = ImageTk.PhotoImage(Image.open("pic/tomato_little.png").resize((300, 300)))
         self.bg_image_relax = ImageTk.PhotoImage(Image.open("pic/relax.png").resize((300, 300)))
+        
+        # setting images of buttons
+        self.img_start = ImageTk.PhotoImage(Image.open("pic/play-button.png").resize((60, 60)))
+        self.img_pause = ImageTk.PhotoImage(Image.open("pic/pause.png").resize((60, 60)))
+        self.img_settime = ImageTk.PhotoImage(Image.open("pic/setting_timer.png").resize((60, 60)))
         self.bg_label = tk.Label(self.root, image=self.bg_image_all)
         self.bg_label.place(relwidth=1, relheight=1)
+
+        
 
         # 新增上方選單
         menubar = tk.Menu(self.root)
@@ -61,14 +68,30 @@ class PomodoroTimer:
         self.study_label = tk.Label(root, text="今日已讀: 0.0 小時", font=("Times", 12))
         self.study_label.pack()
 
+        # # 按鈕區域
+        # button_frame = tk.Frame(root)
+        # button_frame.pack(pady=20)
+
+        # self.start_button = tk.Button(button_frame, text="開始", command=self.toggle_timer)
+        # self.start_button.grid(row=0, column=0, padx=10)
+
+        # self.setTime_button = tk.Button(button_frame, text="自訂時間", command=self.set_time)
+        # self.setTime_button.grid(row=0, column=1, padx=10)
+
         # 按鈕區域
         button_frame = tk.Frame(root)
         button_frame.pack(pady=20)
 
-        self.start_button = tk.Button(button_frame, text="開始", command=self.toggle_timer)
+        self.start_button = tk.Button(
+            button_frame, image=self.img_start, command=self.toggle_timer,
+            bd=0, highlightthickness=0, relief="flat", bg="white", activebackground="white"
+        )
         self.start_button.grid(row=0, column=0, padx=10)
 
-        self.setTime_button = tk.Button(button_frame, text="自訂時間", command=self.set_time)
+        self.setTime_button = tk.Button(
+            button_frame, image=self.img_settime, command=self.set_time,
+            bd=0, highlightthickness=0, relief="flat", bg="white", activebackground="white"
+        )
         self.setTime_button.grid(row=0, column=1, padx=10)
 
         # 背景執行的 Timer
@@ -120,11 +143,11 @@ class PomodoroTimer:
     def toggle_timer(self):
         if self.is_running:
             self.is_running = False
-            self.start_button.config(text="開始")
+            self.start_button.config(image=self.img_start)
             self.setTime_button.config(state="normal")
         else:
             self.is_running = True
-            self.start_button.config(text="暫停")
+            self.start_button.config(image=self.img_pause)
             self.setTime_button.config(state="disabled")
             if not self.timer_thread or not self.timer_thread.is_alive():
                 self.timer_thread = threading.Thread(target=self.run_timer)
@@ -150,7 +173,8 @@ class PomodoroTimer:
             elif (current_seconds / self.study_seconds) <= 0.6:
                 if (current_seconds / self.study_seconds) <= 0.3:
                     self.bg_label.config(image=self.bg_image_little)
-                self.bg_label.config(image=self.bg_image_half)
+                else:
+                    self.bg_label.config(image=self.bg_image_half)
         # 更改秒數
         self.time_label.config(text=self.format_time(current_seconds))
 
@@ -159,14 +183,15 @@ class PomodoroTimer:
             self.study_time_today += self.study_seconds
             self.update_study_time_label()
             # 用 after 在主執行緒呼叫 GUI 對話框
-            self.start_button.config(text="開始")
+            self.start_button.config(image=self.img_start)
             self.setTime_button.config(state="normal")
             self.root.after(0, self.prompt_and_save_study_record)
         else:
             self.is_break = False
             self.current_seconds = self.study_seconds  # 學習時倒數學習時間
             messagebox.showinfo("重新開始", "休息結束，準備下一輪吧！")
-            self.start_button.config(text="開始")
+            self.bg_label.config(image=self.bg_image_all)
+            self.start_button.config(image=self.img_start)
             self.setTime_button.config(state="normal")
         self.update_ui(self.current_seconds)
         
