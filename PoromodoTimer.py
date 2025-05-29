@@ -43,15 +43,22 @@ class PomodoroTimer:
         self.bg_label = tk.Label(self.root, image=self.bg_image_all)
         self.bg_label.place(relwidth=1, relheight=1)
 
-        
-
-        # 新增上方選單
+        # 設定上方選單
         menubar = tk.Menu(self.root)
+        
+        # 檔案選單
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="匯入紀錄")
+        file_menu.add_command(label="匯出紀錄")
+        menubar.add_cascade(label="檔案", menu=file_menu)
+
+        # 功能選單
         mode_menu = tk.Menu(menubar, tearoff=0)
         mode_menu.add_command(label="計時", command=self.show_timer)
         mode_menu.add_command(label="查看紀錄", command=self.show_records)
         menubar.add_cascade(label="功能", menu=mode_menu)
-    
+
+        self.root.config(menu=menubar)
 
         self.is_running = False
         self.is_break = False
