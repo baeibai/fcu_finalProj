@@ -6,6 +6,10 @@ import csv
 from datetime import datetime, date
 from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 微軟正黑體
+import numpy as np
 
 class TimeSettingDialog(simpledialog.Dialog):
     def body(self, master):
@@ -29,6 +33,7 @@ class PomodoroTimer:
         self.root.title("Pomodoro Timer")
         self.root.geometry("300x300")
         self.root.iconbitmap("pic/tomato_icon.ico")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # 設定背景圖片
         self.bg_image_all = ImageTk.PhotoImage(Image.open("pic/tomato_all.png").resize((300, 300)))
@@ -65,14 +70,14 @@ class PomodoroTimer:
         self.study_seconds = 25 * 60
         self.relax_seconds = 5 * 60
         self.current_seconds = self.study_seconds
-        self.study_time_today = 0  # 單位為秒
+        self.study_time_today = self.get_today_study_seconds()  # 單位為秒
 
         # 顯示時間的Label
         self.time_label = tk.Label(root, text=self.format_time(self.study_seconds), font=("Helvetica", 30))
         self.time_label.pack(expand=True)
 
         # 累積時間Label
-        self.study_label = tk.Label(root, text="今日已讀: 0.0 小時", font=("Times", 12))
+        self.study_label = tk.Label(root, text=f"今日已讀: {round(self.study_time_today / 3600, 2)} 小時", font=("Helvetica", 12))
         self.study_label.pack()
 
         # # 按鈕區域
@@ -104,26 +109,14 @@ class PomodoroTimer:
         # 背景執行的 Timer
         self.timer_thread = None
 
+    def on_closing(self):
+        self.is_running = False  # 停止計時執行緒
+        plt.close('all') 
+        self.root.destroy()
+
     def show_timer(self):
         # 目前只有一個主畫面，這裡可擴充切換不同畫面
         messagebox.showinfo("提示", "已在計時畫面。")
-
-    def show_records(self):
-        try:
-            with open("study_log.csv", "r", encoding="utf-8") as file:
-                records = list(csv.reader(file))
-            record_window = tk.Toplevel(self.root)
-            record_window.title("學習紀錄")
-            columns = ("日期", "時間", "內容", "時長")
-            tree = ttk.Treeview(record_window, columns=columns, show="headings")
-            for col in columns:
-                tree.heading(col, text=col)
-                tree.column(col, width=100, anchor="center")
-            for row in records:
-                tree.insert("", tk.END, values=row)
-            tree.pack(expand=True, fill="both")
-        except FileNotFoundError:
-            messagebox.showinfo("提示", "尚無學習紀錄。")
     
     def format_time(self, seconds):
         return f"{seconds // 60:02}:{seconds % 60:02}"
@@ -207,6 +200,25 @@ class PomodoroTimer:
         hours = round(self.study_time_today / 3600, 2)
         self.study_label.config(text=f"今日已讀: {hours} 小時")
 
+    def get_today_study_seconds(self):
+        # 讀取csv並加總今天的學習秒數
+        today = date.today().isoformat()
+        total_seconds = 0
+        try:
+            with open("study_log.csv", "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 4 and row[0] == today:
+                        # row[3] 例：'25分鐘'
+                        try:
+                            mins = int(row[3].replace("分鐘", ""))
+                            total_seconds += mins * 60
+                        except:
+                            pass
+        except FileNotFoundError:
+            pass
+        return total_seconds
+
     def prompt_and_save_study_record(self):
         plan = simpledialog.askstring("學習記錄", "請輸入這次讀書的內容：")
         if plan:
@@ -281,7 +293,7 @@ class PomodoroTimer:
             messagebox.showinfo("成功", "匯出完成！")
         except Exception as e:
             messagebox.showerror("錯誤", f"匯出失敗：{e}")
-
+            
     def show_records(self):
         try:
             with open("study_log.csv", "r", encoding="utf-8") as file:
@@ -290,41 +302,138 @@ class PomodoroTimer:
                 messagebox.showinfo("提示", "尚無學習紀錄。")
                 return
 
-            # 取得所有不重複的日期（假設日期在第0欄
+            # 取得所有不重複的日期
             dates = sorted({row[0] for row in records if len(row) > 0})
-            if not dates:
-                messagebox.showinfo("提示", "尚無學習紀錄。")
-                return
-            dates.insert(0, "全部日期")  # 加入預設選項
+            dates.insert(0, "全部日期")
+
             records_window = tk.Toplevel(self.root)
             records_window.title("學習紀錄")
 
-            # OptionMenu選擇日期
-            selected_date = tk.StringVar(records_window)
-            selected_date.set(dates[0])  # 預設選擇第一個日期
+            notebook = ttk.Notebook(records_window)
+            notebook.pack(expand=True, fill="both")
 
-            def update_tree(*args):
-                for i in tree.get_children():
-                    tree.delete(i)
-                for row in records:
-                    if row and (selected_date.get() == "全部日期" or row[0] == selected_date.get()):
-                        tree.insert("", tk.END, values=row)
-        
-            tk.Label(records_window, text="選擇日期:").pack(pady=5)
-            date_menu = tk.OptionMenu(records_window, selected_date, *dates, command=lambda _: update_tree())
-            date_menu.pack(pady=5)
+            # --- 純文字分頁 ---
+            text_frame = tk.Frame(notebook)
+            notebook.add(text_frame, text="純文字紀錄")
+
+            selected_date_text = tk.StringVar(text_frame)
+            selected_date_text.set("全部日期")
+
+            tk.Label(text_frame, text="選擇日期:").pack(pady=5)
+            date_menu_text = tk.OptionMenu(text_frame, selected_date_text, *dates, command=lambda _: update_tree())
+            date_menu_text.pack(pady=5)
 
             columns = ("日期", "時間", "內容", "時長")
-            tree = ttk.Treeview(records_window, columns=columns, show="headings")
+            tree = ttk.Treeview(text_frame, columns=columns, show="headings")
             for col in columns:
                 tree.heading(col, text=col)
                 tree.column(col, width=100, anchor="center")
             tree.pack(expand=True, fill="both")
-            
+
+            def update_tree(*args):
+                for i in tree.get_children():
+                    tree.delete(i)
+                # 預設全部日期
+                if selected_date_text.get() == "全部日期":
+                    for row in records:
+                        if row:
+                            tree.insert("", tk.END, values=row)
+                else:
+                    for row in records:
+                        if row and row[0] == selected_date_text.get():
+                            tree.insert("", tk.END, values=row)
+
             update_tree()
+
+            # --- 分析分頁 ---
+            analysis_frame = tk.Frame(notebook)
+            notebook.add(analysis_frame, text="圖片分析與評語")
+
+            dashboard_label = tk.Label(analysis_frame, text="", font=("Helvetica", 14))
+            dashboard_label.pack(pady=10)
+            comment_label = tk.Label(analysis_frame, text="", fg="blue", font=("Helvetica", 12))
+            comment_label.pack(pady=10)
+
+            # 圖片分析自己的 OptionMenu
+            selected_date_analysis = tk.StringVar(analysis_frame)
+            selected_date_analysis.set("全部日期")
+            tk.Label(analysis_frame, text="選擇日期:").pack(pady=5)
+            date_menu_analysis = tk.OptionMenu(analysis_frame, selected_date_analysis, *dates, command=lambda _: update_dashboard())
+            date_menu_analysis.pack(pady=5)
+
+            # matplotlib
+            fig, ax = plt.subplots(figsize=(6, 3))
+            canvas = FigureCanvasTkAgg(fig, master=analysis_frame)
+            canvas.get_tk_widget().pack()
+
+            def update_dashboard(*args):
+                if selected_date_analysis.get() == "全部日期":
+                    # x軸為日期，y軸為每天總讀書小時
+                    date_to_minutes = {}
+                    for row in records:
+                        if row:
+                            date = row[0]
+                            try:
+                                mins = int(row[3].replace("分鐘", ""))
+                                date_to_minutes[date] = date_to_minutes.get(date, 0) + mins
+                            except:
+                                pass
+                    x_dates = sorted(date_to_minutes.keys())
+                    y_hours = [date_to_minutes[d]/60 for d in x_dates]
+                    ax.clear()
+                    ax.bar(x_dates, y_hours, color="#4A90E2")
+                    ax.set_xticks(np.arange(len(x_dates)))
+                    ax.set_xticklabels(x_dates, rotation=45, fontsize=10)
+                    ax.set_xlabel("日期")
+                    ax.set_ylabel("讀書小時數")
+                    ax.set_title("各日期讀書總時數")
+                    fig.tight_layout(rect=[0, 0.15, 1, 1])
+                    dashboard_label.config(text="全部日期讀書總時數")
+                    comment_label.config(text="")
+                    canvas.draw()
+                else:
+                    # 單一天，x軸為小時
+                    hour_bins = [0]*24
+                    total_minutes = 0
+                    for row in records:
+                        if row and row[0] == selected_date_analysis.get():
+                            try:
+                                mins = int(row[3].replace("分鐘", ""))
+                                hour = int(row[1].split(":")[0])
+                                hour_bins[hour] += mins
+                                total_minutes += mins
+                            except:
+                                pass
+                    dashboard_label.config(text=f"{selected_date_analysis.get()} 讀書總時數：{round(total_minutes/60,2)} 小時")
+                    hour_bins_in_hours = [m/60 for m in hour_bins]
+                    ax.clear()
+                    x = np.arange(24)
+                    ax.bar(x, hour_bins_in_hours, color="#4A90E2")
+                    ax.set_xticks(x)
+                    ax.set_xticklabels([str(h) for h in x], rotation=0, fontsize=10)
+                    ax.set_xlabel("小時")
+                    ax.set_ylabel("讀書小時數")
+                    ax.set_ylim(0, 24)
+                    ax.set_title("每小時讀書時間分布")
+                    fig.tight_layout(rect=[0, 0.05, 1, 1])
+                    # 評語
+                    if total_minutes >= 6*60:
+                        comment = "非常棒！你今天的學習效率很高，繼續保持！"
+                    elif total_minutes >= 3*60:
+                        comment = "不錯哦，今天有穩定學習，建議再多安排一點時間！"
+                    elif total_minutes > 0:
+                        comment = "今天學習時間較少，可以檢視時間規劃並加強專注！"
+                    else:
+                        comment = "今天還沒有學習紀錄，快開始學習吧！"
+                    comment_label.config(text=comment)
+                    canvas.draw()
+
+            update_dashboard()
 
         except FileNotFoundError:
             messagebox.showinfo("提示", "尚無學習紀錄。")
+        
+            
 # 啟動主視窗
 if __name__ == "__main__":
     root = tk.Tk()
