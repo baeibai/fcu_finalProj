@@ -282,6 +282,49 @@ class PomodoroTimer:
         except Exception as e:
             messagebox.showerror("錯誤", f"匯出失敗：{e}")
 
+    def show_records(self):
+        try:
+            with open("study_log.csv", "r", encoding="utf-8") as file:
+                records = list(csv.reader(file))
+            if not records:
+                messagebox.showinfo("提示", "尚無學習紀錄。")
+                return
+
+            # 取得所有不重複的日期（假設日期在第0欄
+            dates = sorted({row[0] for row in records if len(row) > 0})
+            if not dates:
+                messagebox.showinfo("提示", "尚無學習紀錄。")
+                return
+            dates.insert(0, "全部日期")  # 加入預設選項
+            records_window = tk.Toplevel(self.root)
+            records_window.title("學習紀錄")
+
+            # OptionMenu選擇日期
+            selected_date = tk.StringVar(records_window)
+            selected_date.set(dates[0])  # 預設選擇第一個日期
+
+            def update_tree(*args):
+                for i in tree.get_children():
+                    tree.delete(i)
+                for row in records:
+                    if row and (selected_date.get() == "全部日期" or row[0] == selected_date.get()):
+                        tree.insert("", tk.END, values=row)
+        
+            tk.Label(records_window, text="選擇日期:").pack(pady=5)
+            date_menu = tk.OptionMenu(records_window, selected_date, *dates, command=lambda _: update_tree())
+            date_menu.pack(pady=5)
+
+            columns = ("日期", "時間", "內容", "時長")
+            tree = ttk.Treeview(records_window, columns=columns, show="headings")
+            for col in columns:
+                tree.heading(col, text=col)
+                tree.column(col, width=100, anchor="center")
+            tree.pack(expand=True, fill="both")
+            
+            update_tree()
+
+        except FileNotFoundError:
+            messagebox.showinfo("提示", "尚無學習紀錄。")
 # 啟動主視窗
 if __name__ == "__main__":
     root = tk.Tk()
