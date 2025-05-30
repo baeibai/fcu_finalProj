@@ -4,7 +4,7 @@ import time
 import threading
 import csv
 from datetime import datetime, date
-from tkinter import ttk
+from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
 
 class TimeSettingDialog(simpledialog.Dialog):
@@ -48,8 +48,8 @@ class PomodoroTimer:
         
         # 檔案選單
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="匯入紀錄")
-        file_menu.add_command(label="匯出紀錄")
+        file_menu.add_command(label="匯入", command=self.insert_csv)
+        file_menu.add_command(label="匯出", command=self.export_csv)
         menubar.add_cascade(label="檔案", menu=file_menu)
 
         # 功能選單
@@ -228,6 +228,59 @@ class PomodoroTimer:
         with open(filename, "a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
             writer.writerow([today, now, plan, f"{self.study_seconds // 60}分鐘"])
+
+    # 匯入CSV，合併到現有csv
+    def insert_csv(self):
+        filename = filedialog.askopenfilename(
+            title="選擇要匯入的CSV檔",
+            filetypes=[("CSV Files", "*.csv")]
+        )
+        if not filename:
+            return
+        try:
+            # 讀取現有資料
+            current_data = []
+            try:
+                with open("study_log.csv", "r", encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    current_data = list(reader)
+            except FileNotFoundError:
+                pass  # 沒有舊檔案也沒關係
+
+            # 讀取匯入資料
+            with open(filename, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                import_data = list(reader)
+
+            # 合併（避免重複可自行加判斷）
+            merged_data = current_data + import_data
+            merged_data.sort(key=lambda row: row[0] if len(row) > 0 else "")
+
+            # 寫回主csv
+            with open("study_log.csv", "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(merged_data)
+
+            messagebox.showinfo("成功", "匯入完成！")
+        except Exception as e:
+            messagebox.showerror("錯誤", f"匯入失敗：{e}")
+
+    # 匯出CSV，另存新檔
+    def export_csv(self):
+        filename = filedialog.asksaveasfilename(
+            title="另存新檔",
+            defaultextension=".csv",
+            filetypes=[("CSV Files", "*.csv")]
+        )
+        if not filename:
+            return
+        try:
+            with open("study_log.csv", "r", encoding="utf-8") as src, \
+                 open(filename, "w", encoding="utf-8", newline="") as dst:
+                dst.write(src.read())
+            messagebox.showinfo("成功", "匯出完成！")
+        except Exception as e:
+            messagebox.showerror("錯誤", f"匯出失敗：{e}")
 
 # 啟動主視窗
 if __name__ == "__main__":
