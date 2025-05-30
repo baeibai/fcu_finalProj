@@ -4,12 +4,15 @@ import time
 import threading
 import csv
 from datetime import datetime, date
-from tkinter import ttk, filedialog
+from tkinter import filedialog
+from tkinter import ttk
 from PIL import Image, ImageTk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 微軟正黑體
 import numpy as np
+import os
+import shutil
 
 class TimeSettingDialog(simpledialog.Dialog):
     def body(self, master):
@@ -220,26 +223,30 @@ class PomodoroTimer:
         return total_seconds
 
     def prompt_and_save_study_record(self):
-        plan = simpledialog.askstring("學習記錄", "請輸入這次讀書的內容：")
-        if plan:
-            self.save_to_csv(plan)
+        dialog = StudyRecordDialog(self.root, title="學習記錄")
+        if hasattr(dialog, 'subject') and dialog.subject:
+            self.save_to_csv(
+                subject=dialog.subject,
+                study_range=dialog.range,
+                note=dialog.note,
+                img_path=dialog.img_path
+            )
         else:
-            messagebox.showwarning("警告", "未輸入內容，將不保存紀錄。")
+            messagebox.showwarning("警告", "未輸入科目，將不保存紀錄。")
         self.is_break = True
-        self.current_seconds = self.relax_seconds  # 休息時倒數休息時間
+        self.current_seconds = self.relax_seconds
         self.start_button.config(text="開始")
         self.setTime_button.config(state="normal")
         messagebox.showinfo(f"休息時間", f"恭喜你完成一輪，來休{self.relax_seconds // 60}分鐘吧！")
         self.update_ui(self.current_seconds)
 
-    def save_to_csv(self, plan):
+    def save_to_csv(self, subject, study_range, note, img_path):
         filename = "study_log.csv"
         today = date.today().isoformat()
         now = datetime.now().strftime("%H:%M:%S")
-
         with open(filename, "a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
-            writer.writerow([today, now, plan, f"{self.study_seconds // 60}分鐘"])
+            writer.writerow([today, now, subject, f"{self.study_seconds // 60}分鐘", study_range, note, img_path])
 
     # 匯入CSV，合併到現有csv
     def insert_csv(self):
@@ -323,12 +330,50 @@ class PomodoroTimer:
             date_menu_text = tk.OptionMenu(text_frame, selected_date_text, *dates, command=lambda _: update_tree())
             date_menu_text.pack(pady=5)
 
-            columns = ("日期", "時間", "內容", "時長")
+            columns = ("日期", "時間", "科目", "時長")
             tree = ttk.Treeview(text_frame, columns=columns, show="headings")
             for col in columns:
                 tree.heading(col, text=col)
                 tree.column(col, width=100, anchor="center")
             tree.pack(expand=True, fill="both")
+            
+            def show_detail(event):
+                selected = tree.focus()
+                if not selected:
+                    return
+                item = tree.item(selected)
+                values = item['values']
+                # 找到原始 row
+                for row in records:
+                    # 比對前四欄（日期、時間、科目、時長）
+                    if row and row[0] == values[0] and row[1] == values[1] and row[2] == values[2] and row[3] == values[3]:
+                        detail = (
+                            f"日期：{row[0]}\n"
+                            f"時間：{row[1]}\n"
+                            f"科目：{row[2]}\n"
+                            f"讀書時間：{row[3]}\n"
+                            f"範圍：{row[4] if len(row)>4 else ''}\n"
+                            f"註記：{row[5] if len(row)>5 else ''}\n"
+                            f"圖片：{'有' if len(row)>6 and row[6]!='NULL' else '無'}"
+                        )
+                        detail_win = tk.Toplevel(tree)
+                        detail_win.title("詳細資料")
+                        tk.Label(detail_win, text=detail, justify="left", font=("Helvetica", 12)).pack(padx=10, pady=10)
+                        # 顯示圖片（如果有）
+                        if len(row) > 6 and row[6] != "NULL":
+                            img_path = row[6]
+                            if not os.path.isabs(img_path):
+                                img_path = os.path.join(os.getcwd(), img_path)
+                            if os.path.exists(img_path):
+                                img = Image.open(img_path)
+                                img = img.resize((200, 200))
+                                img_tk = ImageTk.PhotoImage(img)
+                                img_label = tk.Label(detail_win, image=img_tk)
+                                img_label.image = img_tk  # 防止被回收
+                                img_label.pack(pady=5)
+                        break
+
+            tree.bind("<Double-1>", show_detail)
 
             def update_tree(*args):
                 for i in tree.get_children():
@@ -433,6 +478,64 @@ class PomodoroTimer:
         except FileNotFoundError:
             messagebox.showinfo("提示", "尚無學習紀錄。")
         
+class StudyRecordDialog(simpledialog.Dialog):
+    subjects_history = set()
+
+    def body(self, master):
+        tk.Label(master, text="科目:").grid(row=0, column=0)
+        tk.Label(master, text="範圍:").grid(row=1, column=0)
+        tk.Label(master, text="註記:").grid(row=2, column=0)
+        tk.Label(master, text="圖片:").grid(row=3, column=0)
+
+        self.subject_var = tk.StringVar()
+        self.subject_box = ttk.Combobox(master, textvariable=self.subject_var)
+        self.subject_box['values'] = list(StudyRecordDialog.subjects_history)
+        self.subject_box.grid(row=0, column=1)
+
+        self.range_entry = tk.Entry(master)
+        self.range_entry.grid(row=1, column=1)
+
+        self.note_entry = tk.Entry(master)
+        self.note_entry.grid(row=2, column=1)
+
+        self.img_path_var = tk.StringVar()
+        self.img_entry = tk.Entry(master, textvariable=self.img_path_var, state="readonly")
+        self.img_entry.grid(row=3, column=1)
+        self.img_btn = tk.Button(master, text="選擇圖片", command=self.choose_img)
+        self.img_btn.grid(row=3, column=2)
+
+        return self.subject_box
+
+    def choose_img(self):
+        path = filedialog.askopenfilename(title="選擇圖片", filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")])
+        if path:
+            folder = os.path.join(os.getcwd(), "study_pic")
+            os.makedirs(folder, exist_ok=True)
+            filename = os.path.basename(path)
+            # 防止重名覆蓋
+            base, ext = os.path.splitext(filename)
+            i = 1
+            new_filename = filename
+            while os.path.exists(os.path.join(folder, new_filename)):
+                new_filename = f"{base}_{i}{ext}"
+                i += 1
+            new_path = os.path.join(folder, new_filename)
+            shutil.copy(path, new_path)
+            # 儲存相對路徑
+            rel_path = os.path.relpath(new_path, os.getcwd())
+            self.img_path_var.set(rel_path)
+
+    def apply(self):
+        self.subject = self.subject_var.get()
+        self.range = self.range_entry.get()
+        self.note = self.note_entry.get()
+        self.img_path = self.img_path_var.get() if self.img_path_var.get() else "NULL"
+        if self.subject:
+            StudyRecordDialog.subjects_history.add(self.subject)
+        else:
+            messagebox.showwarning("警告", "科目為必填欄位！")
+            
+            
             
 # 啟動主視窗
 if __name__ == "__main__":
